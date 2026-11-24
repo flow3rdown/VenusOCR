@@ -1,0 +1,74 @@
+# VenusOCR 默认配置
+# 可通过 `venusocr parse <input> --config <your.yaml>` 覆盖，
+# 或使用 `--set engine.vl_rec_server_url http://x.x.x.x:8000/v1` 逐项覆盖。
+
+engine:
+  # 版面推理后端：paddlex 是 PaddleOCR-VL 1.6 兼容基准；transformers 可减少 Paddle 依赖
+  layout_backend: transformers
+  # layout_backend: paddlex
+  # 版面检测模型（PP-DocLayoutV3）。layout_model_dir 为 null 时自动下载官方权重。
+  # transformers 后端建议显式设置为本地 safetensors 模型目录，或 Hugging Face 模型 ID。
+  layout_model_name: PP-DocLayoutV3
+  layout_model_dir: null
+  # 版面检测等本地模块的运行设备，如 gpu:0 / cpu
+  device: gpu:0
+  layout_batch_size: 8
+  # 版面检测后处理参数；为 null 时使用 PaddleOCR-VL 1.6
+  # PP-DocLayoutV3 兼容参数（threshold=0.3，见 venusocr/models/layout.py）
+  layout_threshold: null
+  layout_nms: null
+  layout_unclip_ratio: null
+  layout_merge_bboxes_mode: null
+  # 识别服务后端：VenusOCR 通过 vLLM 以 OpenAI 兼容接口提供服务
+  vl_rec_backend: vllm-server
+  vl_rec_server_url: http://127.0.0.1:8000/v1
+  # 服务端模型名；为 null 时自动从服务的 /v1/models 获取
+  vl_rec_api_model_name: null
+  # 服务端 API key（无鉴权服务保持 null 即可）
+  vl_rec_api_key: null
+  # 识别请求并发上限
+  vl_rec_max_concurrency: 200
+
+predict:
+  use_layout_detection: true
+  # VenusOCR VLM only supports text / formula / table recognition.
+  # chart / seal / spotting regions are always exported as images.
+  use_chart_recognition: false
+  use_seal_recognition: false
+  use_ocr_for_image_block: false
+  # 关闭版面检测时整页识别使用的 prompt（text / formula / table）
+  prompt_label: null
+  # 版面框形状模式：auto / rect / quad / poly
+  layout_shape_mode: auto
+  # 相邻文本块合并（null 表示开启）
+  merge_layout_blocks: null
+  # json 中的 block_content 是否做 markdown 格式化（null 表示关闭）
+  format_block_content: null
+  # 需要从 markdown 中剔除的版面标签
+  markdown_ignore_labels: []
+  # 采样相关（null 表示使用服务端/管线默认）
+  repetition_penalty: null
+  temperature: null
+  top_p: null
+  min_pixels: null
+  max_pixels: null
+  max_new_tokens: null
+
+output:
+  # 保存聚合所有页面的整文档 <文档名>.md（含裁剪图片）
+  save_markdown: true
+  # 保存在原始页面上画半透明框后的 <文档名>_layout.pdf
+  save_layout_vis: true
+  # markdown 是否美化（表格等补全格式，速度略慢）
+  pretty_markdown: false
+
+batch:
+  # 目录批量解析：所有文档共享 1 个版面模型，PDF 展平后按页组批推理
+  # 并发的页面批处理 Worker 数（线程）
+  num_workers: 8
+  # 每个页面批包含的页数（跨文档组批，控制总体推理批次规模）
+  page_batch_size: 64
+  # 文档加载 / PDF 渲染线程数
+  loader_workers: 2
+  # 结果保存线程数
+  saver_workers: 2
