@@ -11,7 +11,7 @@
 | `ocr.parse_files(paths, output_dir=None, input_root=None)` | 顺序迭代；有输出根目录时自动保存，捕获解析异常并跳过该文件；保存异常仍可能抛出 |
 | `ocr.parse_dir(input_dir, output_dir, num_workers=...)` | `BatchSummary`；不会返回每个文档的 `DocumentResult`，也不自动导出页 JSON |
 | `venusocr.parse(input_path, output_dir=None, ...)` | 文件返回一个 `DocumentResult`，目录返回顺序处理后的结果列表；不是并发批量入口 |
-| `result.save(output_dir, output_config)` | 创建 `<output_dir>/<stem>/`，保存整文档 Markdown、引用图、可选版面 PDF |
+| `result.save(output_dir, output_config)` | 创建 `<output_dir>/<document_name>/`，保存整文档 Markdown、引用图、可选版面 PDF；同 stem 兄弟文件存在时 `document_name` 保留输入扩展名 |
 | `result.page_results` | `PageResult` 列表；不要虚构 `result.pages` 或文档级 `result.json` |
 
 使用 `with VenusOCR(...) as ocr:` 管理资源；多文件尽量复用同一个实例，不自行用多个外部线程并发调用同一个 `ocr.parse()`。并发需求使用项目提供的 `parse_dir()`，不要额外创建大量模型进程。
@@ -36,6 +36,7 @@ import os
 from pathlib import Path
 
 from venusocr import VenusOCR
+from venusocr.utils.fileio import output_name_for
 
 source = Path(os.environ["VENUSOCR_JOB_INPUT"]).resolve(strict=True)
 config_path = Path(os.environ["VENUSOCR_JOB_CONFIG"]).resolve(strict=True)
@@ -62,29 +63,30 @@ with VenusOCR(config_path=str(config_path), overrides=overrides) as ocr:
             raise RuntimeError("Incomplete or unordered PDF page results")
 
     result.save(str(output), ocr.config.output)
-    doc_dir = output / result.stem
+    document_name = output_name_for(str(source))
+    doc_dir = output / document_name
     for position, page in enumerate(result.page_results, start=1):
-        page.save_to_json(str(doc_dir / f"{result.stem}.page_{position:06d}.json"))
+        page.save_to_json(str(doc_dir / f"{document_name}.page_{position:06d}.json"))
         page.save_to_markdown(
-            str(doc_dir / f"{result.stem}.page_{position:06d}.md"),
+            str(doc_dir / f"{document_name}.page_{position:06d}.md"),
             pretty=ocr.config.output.pretty_markdown,
         )
     (doc_dir / "metrics.json").write_text(
         json.dumps(result.metrics.to_dict(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    markdown_path = doc_dir / f"{result.stem}.md"
+    markdown_path = doc_dir / f"{document_name}.md"
     if not markdown_path.is_file():
         raise RuntimeError("Expected Markdown was not saved")
     if ocr.config.output.save_layout_vis:
-        if not (doc_dir / f"{result.stem}_layout.pdf").is_file():
+        if not (doc_dir / f"{document_name}_layout.pdf").is_file():
             raise RuntimeError("Parsing succeeded, but the layout PDF was not saved")
     print(doc_dir)
 ```
 
 说明与验收：
 
-- `report.page_000001.json`、`report.page_000001.md`、`metrics.json` 是示例显式保存的文件，不是 CLI 默认输出。逐页文件使用 `<stem>.page_<序号>` 命名，避免与整文档 `<stem>.md` 冲突；按需求可省略逐页 Markdown 或 metrics 导出。
+- `report.page_000001.json`、`report.page_000001.md`、`metrics.json` 是示例显式保存的文件，不是 CLI 默认输出。逐页文件使用 `<document_name>.page_<序号>` 命名，避免与整文档 `<document_name>.md` 冲突；`document_name` 必须与 `output_name_for()` 一致，同 stem 冲突时形如 `report.pdf.page_000001.json`。按需求可省略逐页 Markdown 或 metrics 导出。
 - 先 `result.save()` 再导出逐页 Markdown：整文档保存会为图片路径加页面前缀，避免多页中相同坐标的图片文件互相覆盖。逐页文件保持在同一文档目录，才能正确引用同一个 `imgs/`。
 - `save()` 若不传 `ocr.config.output` 会重新使用 `OutputConfig()` 默认值，可能忽略解析器中关闭可视化或美化格式等设置。
 - 上面的存在性和页索引检查不能替代识别质量验收；空白页可合法无文本，有文字的页面异常为空时必须复核。
@@ -140,7 +142,7 @@ for block in page["parsing_res_list"]:
 
 `parse_dir()` 不暴露逐文档回调或逐页 JSON 保存开关。批量且每个文档都需要 JSON 时：
 
-1. 明确枚举受支持输入并检查输出冲突。
+1. 明确枚举受支持输入，用 `output_name_for()` 核对实际命名，并为每次运行使用新输出目录。
 2. 使用单个 `VenusOCR` 实例顺序调用 `parse()`，逐个保存本节所述产物并记录成功/失败。
 3. 若必须并发导出 JSON，明确说明这需要额外集成，不伪造现有 API 参数，也不先跑完整批量后再次识别所有文件。
 

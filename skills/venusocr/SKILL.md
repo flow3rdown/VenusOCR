@@ -1,13 +1,13 @@
 ---
 name: venusocr
-description: 用于通过 VenusOCR2.0 解析本地 PDF、扫描件和文档图片，提取文本、表格、公式，生成 Markdown、逐页结构化 JSON 和版面可视化。适用于用户指定 VenusOCR/VenusOCR2.0、调用 venusocr CLI 或 Python API、批量解析文档、配置现有 vLLM 识别服务、排查解析失败，以及根据解析结果阅读、检索、摘要和引用文档的场景。
+description: 用于通过 VenusOCR 2.0 解析本地 PDF、扫描件和文档图片，提取文本、表格、公式，生成 Markdown、逐页结构化 JSON 和版面可视化。适用于用户指定 VenusOCR/VenusOCR2.0、调用 venusocr CLI 或 Python API、批量解析文档、配置标准 AR 或 PTPv2 vLLM 识别服务、启动 Gradio Demo、排查解析失败，以及根据解析结果阅读、检索、摘要和引用文档的场景。
 ---
 
-# VenusOCR2.0 文档解析
+# VenusOCR 2.0 文档解析
 
 使用真实的 `venusocr` CLI / Python API 完成解析，再基于已读取的结果回答问题。不要把 VenusOCR 当作通用聊天模型、文档索引服务或 PDF 编辑器。
 
-本 skill 按仓库提交 `ff3052a`、Python 包版本 `0.1.0` 核对。版本号不能保证接口完全相同；遇到差异，以当前安装的源码、配置与 `--help` 为准。不得声称仅凭本 skill 就能保证任意环境下无错误。
+本 skill 按当前仓库工作树（Git HEAD `9359b7a`）、Python 包版本 `0.1.0` 核对。版本号不能保证接口完全相同；遇到差异，以当前安装的源码、配置与 `--help` 为准。不得声称仅凭本 skill 就能保证任意环境下无错误。
 
 ## 1. 先确定能力与边界
 
@@ -19,7 +19,8 @@ description: 用于通过 VenusOCR2.0 解析本地 PDF、扫描件和文档图�
 | 批量处理目录 | 使用 `venusocr parse DIR` 或 `VenusOCR.parse_dir()` |
 | 已有结果的阅读、搜索、摘要 | 用文件读取/文本搜索工具读取已有 Markdown / JSON，不重新推理 |
 | 单独识别已裁好的文字、表格或公式图片 | 见 [API 与结果](references/api_reference.md) 的区域识别方式 |
-| 启动识别服务或修复环境 | 先读取 [运行配置与排错](references/operations.md)，只在有权限、有资源的机器执行 |
+| 启动标准 AR / PTPv2 识别服务或修复环境 | 先读取 [运行配置与排错](references/operations.md)，只在有权限、有资源的机器执行 |
+| 启动交互式界面 | 使用 `venusocr demo`；它不启动识别服务，也不自动持久化完整结果 |
 
 以 CLI 的格式白名单为标准：`.pdf`、`.jpg`、`.jpeg`、`.png`、`.bmp`、`.webp`、`.tif`、`.tiff`。目录递归扫描只匹配全小写或全大写扩展名；如 `.Pdf` 被遗漏，显式传入该单文件，或由调用方整理清单，不悄悄改名源文件。
 
@@ -46,7 +47,7 @@ description: 用于通过 VenusOCR2.0 解析本地 PDF、扫描件和文档图�
 
 - 已确认目标解释器、`venusocr --version`、`venusocr parse --help` 和包路径；CLI 不在 PATH 时，可使用同环境的 `python -m venusocr`。仅能 import 源码不代表服务端插件已经安装。
 - 已确认输入存在、可读、格式受支持，输出路径可写；目录扫描数量与预期一致。
-- 已确认同一相对目录下不存在 `report.pdf` / `report.png` 这类同 stem 冲突。它们都会写入 `report/`，需分别指定不同输出根目录。
+- 已核对输出命名：同一源目录存在 `report.pdf` / `report.png` 等同 stem 文件时，当前 `output_name_for()` 会保留输入扩展名，分别写入 `report.pdf/`、`report.png/`；普通文件仍写入 `report/`。即使只解析其中一个文件，源目录中的同名兄弟文件也会影响命名。仍须使用新输出目录，避免混入旧产物。
 - 已确认本地版面依赖与权重格式匹配、设备存在；不要假定有第二张 GPU。`CUDA_VISIBLE_DEVICES` 会重新编号可见 GPU。
 - 已从解析机验证服务的 `/v1/models`，确认返回的真实模型 ID；优先显式设置 `--api-model-name`。默认自动发现只取列表第一项，不能验证它就是 VenusOCR。
 - 已确认健康的模型列表不等于推理可用：先用一份获准的小文档或单页图片完成冒烟解析，验收后再跑大目录。
@@ -73,7 +74,7 @@ venusocr parse "$INPUT" -o "$OUTPUT" --config "$CONFIG"
 
 首选读取保存的 Markdown；只有确需终端展示小文档时，才给单文件解析加 `--stdout`。该选项仍然保存文件，并输出标题分隔行，不是纯 Markdown / JSON 协议；目录解析不会执行这段打印逻辑。
 
-如只需要文字产物，可加 `--no-layout-vis`，避免为可视化再次渲染整份文档。用户需要版面证据时保留可视化并核验其实际生成。
+如只需要文字产物，可加 `--no-layout-vis`，避免为可视化再次渲染整份文档。用户需要版面证据时保留可视化并核验其实际生成。需要 HTML 居中等美化格式时加 `--pretty`；`--no-markdown` 会同时跳过整文档 Markdown 和引用图片保存，不会自动改存 JSON，不要与 `--no-layout-vis` 组合后还声称产出了文档结果。
 
 ### 4.2 目录批量解析
 
@@ -116,7 +117,7 @@ OUTPUT/
   failed_files.txt             # 并发目录流程记录了错误时写入
 ```
 
-目录任务保留输入相对父目录，例如 `INPUT/a/report.pdf` 写到 `OUTPUT/a/report/report.md`。`-o` 是输出根目录，不是最终 `.md` 路径。
+目录任务保留输入相对父目录，例如无同名冲突时 `INPUT/a/report.pdf` 写到 `OUTPUT/a/report/report.md`。若 `INPUT/a/` 同时有 `report.png`，两者分别写到 `OUTPUT/a/report.pdf/report.pdf.md` 和 `OUTPUT/a/report.png/report.png.md`，可视化文件也使用带扩展名的文档名。`-o` 是输出根目录，不是最终 `.md` 路径。
 
 **不要预期普通 CLI 自动输出 JSON。** 没有 `output.save_json` 配置项，也没有 `--save-json`。`PageResult.save_to_json()` 才是逐页导出的入口。
 
@@ -143,7 +144,7 @@ OUTPUT/
 
 ## 7. 源码核对入口
 
-源码路径均相对于 VenusOCR2.0 仓库根目录，不相对于 skill 安装目录。复制 skill 后如需排查实现，先定位实际包或仓库，不硬编码本机路径。
+源码路径均相对于 VenusOCR 仓库根目录，不相对于 skill 安装目录。复制 skill 后如需排查实现，先定位实际包或仓库，不硬编码本机路径。
 
 | 核对内容 | 文件 |
 |---|---|

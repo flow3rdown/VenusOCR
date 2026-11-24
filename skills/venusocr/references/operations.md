@@ -29,7 +29,7 @@ python -c 'import venusocr; print(venusocr.__file__)'
 优先复用已验证环境。需安装本仓库版本时，先将 `REPO` 设为目标机器上真实仓库路径；不要因 PyPI 上存在同名包就认为它与当前源码一致。
 
 ```bash
-REPO='/absolute/path/to/VenusOCR2.0'
+REPO='/absolute/path/to/VenusOCR'
 test -f "$REPO/pyproject.toml"
 ```
 
@@ -69,26 +69,38 @@ PaddleX 路径则检查 `paddle` 与 `paddlex`；缺少依赖时先确认安装�
 
 ### 3.1 使用正确参数顺序
 
-`serve` 使用 `argparse.REMAINDER`：**把 VenusOCR 封装层选项放在模型路径之前，原生 vLLM 选项放在模型路径后的 `--` 之后**，避免封装参数被当成透传参数，或与默认参数重复。
+当前 CLI 会先按第一个 `--` 拆分参数：**模型路径与 VenusOCR 封装层选项都放在 `--` 之前，原生 vLLM 选项放在 `--` 之后**。模型路径是位置参数，可放在封装层选项之前或之后；不要沿用旧版 `argparse.REMAINDER` 的参数顺序说明。
 
 ```bash
 VLM_MODEL_DIR='/absolute/models/VenusOCR2-1B'
-CUDA_VISIBLE_DEVICES=0 venusocr serve \
+CUDA_VISIBLE_DEVICES=0 venusocr serve "$VLM_MODEL_DIR" \
   --host 127.0.0.1 \
   --port 8000 \
   --served-model-name VenusOCR \
-  --max-num-batched-tokens 16384 \
-  "$VLM_MODEL_DIR" \
-  -- --gpu-memory-utilization 0.8
+  --max-num-batched-tokens 4096 \
+  -- --max-model-len 10240 --max-num-seqs 8 --gpu-memory-utilization 0.60
 ```
 
-`0.8` 只是示例，不是最低资源保证；结合目标 GPU、并行任务和模型配置确定。封装器默认关闭 prefix caching、把多模态处理器缓存设为 `0`，并添加 `--trust-remote-code`。只透传目标 vLLM `serve --help` 确认支持的参数，不添加其他 OCR 项目的专用选项。
+`0.60` 只是单卡共享场景的示例，不是最低资源保证；结合目标 GPU、并行任务和模型配置确定。封装器默认关闭 prefix caching、把多模态处理器缓存设为 `0`，并添加 `--trust-remote-code`。只透传目标 vLLM `serve --help` 确认支持的参数，不添加其他 OCR 项目的专用选项。
 
 该命令前台阻塞；用独立终端或用户已有进程管理器运行，另一个终端检查就绪。不要因为它未立即退出就再次启动。
 
 跨机器访问时，`127.0.0.1` 指解析机自己而非服务机。需服务机绑定可访问的网卡地址，并正确配置网络访问控制；不要把 `0.0.0.0` 作为客户端 URL，也不要默认把无鉴权服务暴露到公网。
 
-### 3.2 核对服务与模型
+### 3.2 可选 PTPv2 加速服务
+
+仅在用户明确需要 PTPv2 且模型仓库提供配套脚本时启用。标准 `venusocr serve` 启动的是 AR 服务，没有 `--ptp2` 开关；PTPv2 依赖模型仓库中的补丁与启动脚本，不是 SDK 配置项。
+
+```bash
+cd '/absolute/models/VenusOCR2-1B'
+bash scripts/patch_vllm_v0_20_ptp2.sh
+bash scripts/patch_vllm_v0_20_ptp2.sh --check
+HOST=127.0.0.1 PORT=8000 bash scripts/vllm_serve_ptp2.sh
+```
+
+补丁会修改已安装的 vLLM，且只针对 `vllm==0.20.0`。先在独立服务环境备份并获授权，不在共享解析环境直接 patch；需要恢复时使用同一脚本的 `--reverse`，再验证标准 AR。AR 与 PTPv2 不要同时占用同一端口。解析客户端仍使用同一个 OpenAI 兼容 URL，显式指定 `/v1/models` 中的模型名；PTPv2 是解码加速路径，不应被描述为另一套 OCR 输出格式或自动精度提升。
+
+### 3.3 核对服务与模型
 
 从实际解析机访问：
 
@@ -103,7 +115,7 @@ curl --fail --silent --show-error --connect-timeout 5 --max-time 15 "${BASE_URL%
 
 模型列表为空、模型身份不确定、服务未就绪时停止，不发整批请求。`/models` 成功后仍需小样本推理验收。
 
-### 3.3 插件检查
+### 3.4 插件检查
 
 vLLM 必须能发现当前环境已安装包的 `vllm.general_plugins` entry point，名称是 `venusocr`。仅 `cd` 到仓库或设置 `PYTHONPATH` 不等同于安装 entry point。
 
