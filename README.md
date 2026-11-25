@@ -252,9 +252,12 @@ If you find VenusOCR 2.0 useful in your research or applications, please conside
 
 ```bibtex
 @misc{venusocr2026,
-  title={VenusOCR 2.0: Towards Efficient and Effective Document Parsing},
-  author={{VenusOCR Team}},
+  title={VenusOCR2.0: Towards Efficient and Effective Document Parsing},
+  author={Lei Li and Zheng Wei and Yi Yuan and Qingbin Liu and Jiang Bian and Zang Li},
   year={2026},
-  howpublished={\url{https://github.com/VenusOCR/VenusOCR}}
+  eprint={2611.32617},
+  archivePrefix={arXiv},
+  primaryClass={cs.CV},
+  url={https://arxiv.org/abs/2611.32617},
 }
 ```
