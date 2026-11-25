@@ -6,6 +6,9 @@
 
 [English](README.md) | 简体中文
 
+[![Paper](https://img.shields.io/badge/Paper-arXiv-b31b1b.svg?logo=arxiv)](https://arxiv.org/pdf/2611.32617)
+[![Model](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-yellow)](https://huggingface.co/flow3rdown/VenusOCR)
+
 </div>
 
 ---
